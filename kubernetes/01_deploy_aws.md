@@ -404,3 +404,323 @@ kubectl rollout history deploy <deployment-name>                                
 kubectl rollout undo deploy <deployment-name>                                     # 回滾Pod到先前一個版本	
 kubectl rollout undo deploy <deployment-name> --to-revision=n                     # 回滾Pod到某個特定版本
 ```
+
+```sh
+kubectl expose deploy my-first-deployment --type=NodePort --name=my-deployment-service
+
+minikube service my-deployment-service --url
+
+curl http://172.17.0.2:31548
+Hello World!  # 還沒升級前
+
+# 升級 pod
+kubectl set image deploy/my-first-deployment my-pod=scottchayaa/node-demo:1.0 --record
+kubectl rollout status deploy my-first-deployment
+
+curl http://172.17.0.2:31548 
+Hello World! 1.0  # 升級成功
+
+# 檢查更新紀錄
+kubectl rollout history deploy my-first-deployment
+
+kubectl set image deploy/my-first-deployment my-pod=scottchayaa/node-demo --record
+
+# rollback回到特定版本
+kubectl rollout undo deploy my-first-deployment --to-revision=3
+kubectl rollout undo deploy my-first-deployment --to-revision=4
+
+# restart 目前版本, head resource 為 latest 時特別需要 !
+kubectl rollout restart deployment my-first-deployment
+```
+
+
+```sh
+# rollout 指令 (除了 pause 和 resume 其他很常使用)
+kubectl rollout -h
+
+Examples:
+  # Rollback to the previous deployment
+  kubectl rollout undo deployment/abc
+
+  # Check the rollout status of a daemonset
+  kubectl rollout status daemonset/foo
+
+Available Commands:
+  history     View rollout history
+  pause       Mark the provided resource as paused
+  restart     Restart a resource
+  resume      Resume a paused resource
+  status      Show the status of the rollout
+  undo        Undo a previous rollout
+
+```
+
+# 建立外部服務與Pods的溝通管道 - Services
+
+什麼是 Service，如上述前言所提到，我們需要在 Pod 前面再接一層橋樑，  
+確保每次存取應用程式服務時，都能連結到正在運行的Pod。若是還記得，  
+我們前幾天常使用的指令kubectl expose，就會知道該指令可以幫我們創建一個  
+新的 Service 物件，來讓Kubernetes Cluster中運行的 Pod與外部互相溝通。
+
+my-first-service.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-first-service
+spec:
+  type: NodePort
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30001
+  selector:
+    app: my-deployment
+```
+
+```sh
+kubectl get pods --show-labels
+
+kubectl create -f my-first-service.yaml
+
+kubectl delete service my-first-service
+
+# 每次重啟 service, cluster ip 都會不一樣
+kubectl delete svc/my-first-service && kubectl create -f ./my-first-service.yaml
+kubectl get svc
+```
+
+- spec.type
+可以指定Service的型別，可以是NodePort或是LoadBalancer
+
+- spec.ports.protocol
+目前 Service 支援TCP與UDP兩種protocl，預設為TCP
+
+- spec.selector
+selector則會幫我們過濾，在範例中，我們創建的Service會將特定的port number收到的流量導向 標籤為`app=my-deployment`的 Pods
+
+
+# Kubernates : Labels
+
+簡單來說，Labels就是一對具`有辨識度的 key/value`。以下面為例：
+
+- "release" : "stable"，"release" : "qa"
+- "enviroment": "dev"，"enviroment": "production"
+- "tier": "backend", "tier": "frontend"
+
+Labels 有以下幾個特點：
+
+- 每個物件可以同時擁有許多個labels(multiple labels)
+- 可以透過 `Selector`，幫我們縮小要尋找的物件。
+- 目前 API 提供不再只是一個 key對應一個value(Equality-based requirement)的關係，我們也可以使用 matchExpressions 來設定更有彈性的Labels。
+
+如果是沒有識別用途的標籤，Kubernetes 也提供了我們一個 `Annotations` 元件。
+以 Pod 為例，我們可以在Pod的 `Annotations` 紀錄該 Pod的`發行時間`、`發行版本`、`聯絡人email`等。
+
+example : my-pod.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+  labels:
+    app: web
+    tier: backend
+  annotations:
+    version: latest
+    release_date: 2020/03/28
+    contact: mmx112945@gmail.com
+spec:
+  containers:
+  - name: pod-demo
+    image: scottchayaa/node-demo
+    ports:
+    - containerPort: 3000
+  nodeSelector: # 篩選有無符合的 node label 條件
+    hardware: highmemory
+```
+
+- spec.nodeSelector
+會發現目前my-pod的狀態一直在Pending的狀態，如果在用 kubectl describe 仔細查看會發現錯誤的原因是因為沒有找到符合的 Node label
+```
+kubectl describe pod my-pod
+```
+如果我們動態新增一個label到目前的 minikube node 上，pending 就會變成 Running
+```
+kubectl label node minikube hardware=high-memory
+```
+再次用 kubectl describe 查看 my-pod 的狀態，可以看到更詳細的部署過程
+
+可以試著設想，若是有兩種不同類型的 Pod ，一個需要高量的memory，另外一個是需要高量的CPU。  
+透過 nodeSelector 與 labels，我們可以將這些不同種類型的 Pod 部署在不同類型的 Node，讓資源能更有效被利用。
+
+```sh
+kubectl create -f ./my-pod.yaml
+kubectl describe pods my-pod
+
+# 手動新增 label
+kubectl label pods my-pod env=production
+kubectl get pods my-pod --show-labels
+```
+
+
+# Deployment => Health check
+
+偵測到 Pod 的生命週期去調整 Kubernetes Cluster 中其他物件的狀態。
+有些時候，雖然 Pod 還在運行，但在 Pod 中的 web app container 可能`因為某些原因已經停止運作`
+或是資源被其他 containers 佔用，導致我們送去的 request 無法正常回應
+幸好，Kubernetes 也幫我們想到這點了，它提供 `Health Checks` 協助我們
+去偵測 Pod 中的 containers 是否都還正常運作，確保服務本身也能正常運行。
+
+my-first-deployment-with-health-check.yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-first-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-deployment
+  template:
+    metadata:
+      labels:
+        app: my-deployment
+    spec:
+      containers:
+      - name: my-pod
+        image: scottchayaa/node-demo
+        ports:
+        - name : webapp-port
+          containerPort: 3000
+        livenessProbe:
+          httpGet:
+            path: /                      # health checks 要訪問的路徑
+            port: 3000                   # 指定我們要訪問的 port，這裡 port number 是 3000
+          initialDelaySeconds: 15        # 設定當 service 剛啟動時，要延遲幾秒再開始做 health check
+          periodSeconds: 15              # 代表每隔幾秒訪問一次，預設值為 10秒
+          timeoutSeconds: 30
+          successThreshold: 1            # 可以設置訪問幾次就代表目前 service 還正常運行
+          failureThreshold: 3            # 代表 service 回傳不如預期時，在 Kubernetes 放棄該 container 之前，會嘗試的次數，預設為3次。
+```
+
+```
+kubectl describe pod my-first-deployment-67975df96f-rvtcn
+```
+
+如果 livenessProbe.httpGet 故意設定錯誤
+pod 會開始出現 restarts 次數
+
+![](./images/3.png)
+![](./images/4.png)
+
+參考 : https://kubernetes.io/zh/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+
+
+
+# 敏感資料怎麼存放在 k8s : Secrets
+
+Secrets 協助開發者將一些敏感資訊，像是`資料庫帳密`、訪問其他 server 的 `Access Token`、`SSH Key`，
+用非明碼的方式 (opaque) 存放在 Kubernetes 中。今天的學習筆記內容如下：
+
+- 介紹什麼是 Secret
+- 實作：Kubernetes 中如何創建 Secret 物件
+- 實作：如何掛載 Secret 物件到 Pods 中
+
+
+在 Kubernetes 存取敏感資料(sensitive data)有以下幾種常見的使用方式：
+
+- 將 Secrets 當成 環境變數(environment variables) 使用
+- 將 Secrets File 掛載 (mount) 在 Pod 某個檔案路徑底下使用
+- 將這些 sensitive data 統一存放在某一個 Docker Image 中，並將這個 Image 存放在`私有的 Image Registry` 中，透過 image pull 下載到 Kubernetes Cluster 中，讓其他 Pods 存取。 (尚未實作)
+
+
+# 直接來應用 : Wordpress (搭配使用 Secrets)
+
+- Docker 
+  - [Wordpress](https://hub.docker.com/_/wordpress)
+  - [Mysql](https://hub.docker.com/_/mysql)
+
+
+
+wordpress-secret.yaml 
+```yml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wordpress-secret
+type: Opaque
+data:
+  # echo -n "rootpass" | base64
+  db-password: cm9vdHBhc3M=
+```
+
+
+```sh
+kubectl create -f ./wordpress-secret.yaml
+kubectl get secret
+```
+
+
+my-wordpress-deploy.yaml 
+```yml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wordpress-deployment
+  template:
+    metadata:
+      labels:
+        app: wordpress-deployment
+    spec:
+      containers:
+      - name: wordpress
+        image: wordpress:5.3.2-php7.2-fpm-alpine
+        ports:
+        - name: wordpress-port
+          containerPort: 80
+        env:
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-secret
+              key: db-password
+        - name: WORDPRESS_DB_HOST
+          value: 127.0.0.1
+      - name: mysql
+        image: mysql:5.7
+        ports:
+        - name: mysql-port
+          containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: wordpress-secret
+              key: db-password
+```
+
+使用剛剛建立的 Secret  
+將 db-password 設定到 wordpress 和 mysql  
+
+```
+kubectl create -f ./my-wordpress-deploy.yaml
+
+kubectl create -f ./my-wordpress-service.yaml
+
+minikube service wordpress-service --url
+```
+
+
+
+
+
+
+
+
