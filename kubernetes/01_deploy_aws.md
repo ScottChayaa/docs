@@ -478,6 +478,19 @@ spec:
     app: my-deployment
 ```
 
+### nodePort、port、targetPort 的區別
+
+nodePort : 當 type = NodePort 時, 此設定值會有用, 是讓外部流量訪問 service 內的 pods 的設定方式
+
+port : 讓其他 pods 透過這個 port 值, 找到這個 service 內的 pods 服務
+
+targetPort : 對應到內部 pods 的端口, ex : 內部 nginx port 80 . 另外, 若 tagetPort 沒有設定, 則會拿 port 來作為 targetPort
+
+參考 : 
+ - https://blog.csdn.net/yjk13703623757/article/details/79819415
+ - https://zhuanlan.zhihu.com/p/54753738
+
+
 ```sh
 kubectl get pods --show-labels
 
