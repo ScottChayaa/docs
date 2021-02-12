@@ -39,7 +39,7 @@ minikube status
 # (optional) To stop your cluster, run:  
 minikube stop
 
-# (optional) If minikube start returned an error, then you need to clear minikube’s local state:
+# 如果 k8s 要全部重新來過, 可以下刪除指令
 minikube delete
 
 # 刪除一開始下載的
@@ -212,14 +212,14 @@ my-first-service.yaml
 kind: Service
 apiVersion: v1
 metadata:
-  name: my-pod-service
-selector:
-  app: node-demo   # 尋找 pods 裡面 label 標籤有包含此設定值的字串. 可以先用 kubectl describe pod [pod-name] 查看 pod 裡面的資訊
+  name: my-first-service
 spec:
+  selector:
+    app: node-demo   # 尋找 pods 裡面 label 標籤有包含此設定值的字串. 可以先用 kubectl describe pod [pod-name] 查看 pod 裡面的資訊
   ports:
-    - name: http
-      port: 3000
-      nodePort: 30001
+  - name: http
+    port: 3000
+    nodePort: 30001
   type: NodePort
 ```
 

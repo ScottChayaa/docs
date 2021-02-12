@@ -8,7 +8,7 @@ $ minikube dashboard --url
 http://172.17.0.2:xxxxx
 ```
 
-但使用 minikube 的方式只能在本機瀏覽
+但使用 minikube 的方式`只能在本機瀏覽`
 
 ```
 ubuntu@ip-10-0-50-61:~$ netstat -tunl
@@ -24,7 +24,9 @@ tcp        0      0 127.0.0.1:32774         0.0.0.0:*               LISTEN
 需要透過以下的指令，透過 kubectl apply 指令創建 dashboard service  
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/\
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-beta8/aio/deploy/recommended.yaml
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-rc7/aio/deploy/recommended.yaml
 ```
 
 ## 透過 kubectl proxy 連接
@@ -75,5 +77,39 @@ server {
 ```
 
 Kubernetes Dashboard url will be like :
-http://k8s-dashboard.scottchayaa.com/api/v1/namespaces/kubernetes-dashboard/services/http:kubernetes-dashboard:/proxy/
+http://k8s-dashboard.scottchayaa.com/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
 
+
+# Bearer Token
+
+## Create Service Account
+kubectl apply -f dashboard-adminuser.yaml
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+```
+
+Now we need to find token we can use to log in. Execute following command:
+
+```sh
+kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboard get secret | grep admin-user | awk '{print $1}')
+```
+
+```
+Name:         admin-user-token-drl6h
+Namespace:    kubernetes-dashboard
+Labels:       <none>
+Annotations:  kubernetes.io/service-account.name: admin-user
+              kubernetes.io/service-account.uid: 8ecc395c-8b90-4ef0-bb3e-aae871432b9a
+
+Type:  kubernetes.io/service-account-token
+
+Data
+====
+ca.crt:     1066 bytes
+namespace:  20 bytes
+token:      eyJhbGciOiJSUzI1NiIsImtpZCI6Ikl6ZTVWeHJCQnFxSUZmT2lZWE5xNEpiNWNzQl9obThCOG5Idi0zZU9UdWMifQ.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJrdWJlcm5ldGVzLWRhc2hib2FyZCIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJhZG1pbi11c2VyLXRva2VuLWRybDZoIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQubmFtZSI6ImFkbWluLXVzZXIiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC51aWQiOiI4ZWNjMzk1Yy04YjkwLTRlZjAtYmIzZS1hYWU4NzE0MzJiOWEiLCJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6a3ViZXJuZXRlcy1kYXNoYm9hcmQ6YWRtaW4tdXNlciJ9.u9l3dPpZ81iomTjxJWbWQav2qS3GB8ZNPHMVbmqXDb4NjZCaFMOF0VXl4BqnukGQp_8PNWjseq53pimTPRIUSndxz-DJfFn2FenUs5oNn-bzXARFGvbrAPjJ4ArteW78pogjSNQzLHCz6BjEuuU_St_diT-SW4WSo7BX7mc3s6klgYydzE1dwHTxVfBxefef1lvv0XCqEsMGUy_K4xsmm7ax2Kz4GXKQGWJJHlNyvQLk_dzY8q6uCjt6smtqjZanyRz7sfDpw_znEWTVUSN3e1-Tm6gmR-H6gpbILy4i7vi3bdE3FdHNH0E44ICc536xhbUuNL9r2jE-N4NXcpvXnA
+```

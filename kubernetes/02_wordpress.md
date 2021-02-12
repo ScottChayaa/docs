@@ -30,7 +30,7 @@ my-wordpress-deploy.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: wordpress-app
+  name: wordpress-deployment
 spec:
   replicas: 1
   selector:
@@ -43,7 +43,7 @@ spec:
     spec:
       containers:
       - name: wordpress
-        image: wordpress:5.3.2-php7.2-fpm-alpine
+        image: wordpress:5.3.2-php7.2-fpm-alpine # wordpress:4-php7.0
         ports:
         - name: wordpress-port
           containerPort: 80
